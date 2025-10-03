@@ -21,6 +21,13 @@ Estos son una forma de guardar los metadatos de los blobs digamos un tesis.pdf l
 Este id seria el unico conocimiento q tenemos del archivo.pdf con el catalog guardamos el metadato es decir mas informacion.
 Guardamos el blobID, el nombre del fichero es decir tesis.pdf y los tags digamos Tags: {tesis,escuela}.
 
+Por ahora se refactorizo la idea simple de Metadata dentro de catalog y se siguio la idea de filenodes y tagnodes del paper
+Separare Files y tags (strucs/type)
+FileNode → sabe qué tags tiene (referencias por TagID).
+TagNode → sabe qué archivos tiene (FileID).
+Para buscar por tag → solo consultas un TagNode y obtienes directamente los archivos (O(1) para acceso + O(k) para recorrer sus FileIDs). Muchísimo más rápido.
+De esta forma la búsqueda de archivos por tag es directa.
+Cada tag existe una sola vez.
 
 
 

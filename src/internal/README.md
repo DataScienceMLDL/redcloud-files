@@ -1,4 +1,4 @@
-Para probar el programa ejecuta go run main.go en redcloud-files/src/internal
+Para probar el programa ejecuta go run . en redcloud-files/src/internal
 Luego sacas cualquier txt de examples y lo ubicas en /internal y puedes probar cualquier comando q hay por ahora 
 
 OJO: esto es version beta 

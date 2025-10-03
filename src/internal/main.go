@@ -96,14 +96,16 @@ func main() {
 			results := catalog.FindByTags(tags)
 			fmt.Printf("Results found: %d\n", len(results))
 			for _, entry := range results {
-				fmt.Printf("Blob: %s | File: %s | Tags: %v\n", entry.BlobId, entry.FileName, entry.Tags)
+				tagNames := catalog.TagNamesOf(entry)
+				fmt.Printf("Blob: %s | File: %s | Tags: %v\n", entry.BlobId, entry.FileName, tagNames)
 			}
 		case "show":
 			fmt.Printf("=== Full catalog contents ===\n")
 			fmt.Printf("Total entries: %d\n", catalog.Count())
 			allEntries := catalog.GetAllEntries()
 			for blobId, entry := range allEntries {
-				fmt.Printf("BlobID: %s | File: %s | Tags: %v\n", blobId, entry.FileName, entry.Tags)
+				tagNames := catalog.TagNamesOf(entry)
+				fmt.Printf("BlobID: %s | File: %s | Tags: %v\n", blobId, entry.FileName, tagNames)
 			}
 		case "delete":
 			if len(args) < 2 {
@@ -117,7 +119,8 @@ func main() {
 				continue
 			}
 			for _, entry := range deleted {
-				fmt.Printf("Deleted Blob: %s | File: %s | Tags: %v\n", entry.BlobId, entry.FileName, entry.Tags)
+				tagNames := catalog.TagNamesOf(entry)
+				fmt.Printf("Deleted Blob: %s | File: %s | Tags: %v\n", entry.BlobId, entry.FileName, tagNames)
 			}
 
 		default:
