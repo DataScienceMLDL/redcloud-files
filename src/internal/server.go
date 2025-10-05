@@ -22,6 +22,7 @@ func StartServer(addr, storeDir string, c *Catalog) error {
     mux := http.NewServeMux()
     mux.HandleFunc("/add", handleAdd)
     mux.HandleFunc("/add_tag", handleAddTag)
+    mux.HandleFunc("/delete_tag", handleDeleteTag)
     mux.HandleFunc("/list", handleList)
     mux.HandleFunc("/show", handleShow)
     mux.HandleFunc("/delete", handleDelete)
@@ -57,24 +58,92 @@ func handleAddTag(w http.ResponseWriter, r *http.Request) {
         return
     }
     var req struct {
-        FileID FileID
-        Tag    string
+        Query []string 
+        Tags  []string 
+    }
+
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+    if len(req.Tags) == 0 {
+        http.Error(w, "missing tags to add", http.StatusBadRequest)
+        return
+    }
+
+    matches := apiCatalog.FindByTags(req.Query)
+
+    for _, f := range matches {
+        for _, t := range req.Tags {
+            apiCatalog.AddTag(f.BlobId, t)
+        }
+    }
+
+    type respT struct {
+        Updated int        
+        Files   []apiEntry 
+    }
+    resp := respT{
+        Updated: len(matches),
+        Files:   make([]apiEntry, 0, len(matches)),
+    }
+    for _, f := range matches {
+        resp.Files = append(resp.Files, apiEntry{
+            BlobId:   f.BlobId,
+            FileName: f.FileName,
+            Tags:     apiCatalog.TagNamesOf(f),
+        })
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(resp)
+}
+
+func handleDeleteTag(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+    var req struct {
+        Query []string 
+        Tags  []string 
     }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
         http.Error(w, err.Error(), http.StatusBadRequest)
         return
     }
-    file, ok := apiCatalog.files[req.FileID]
-    if !ok {
-        http.Error(w, "file not found", http.StatusNotFound)
+    if len(req.Tags) == 0 {
+        http.Error(w, "missing tags to remove", http.StatusBadRequest)
         return
     }
-    apiCatalog.AddTag(file.BlobId, req.Tag)
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    _ = json.NewEncoder(w).Encode(map[string]any{"file_id": req.FileID, "tag": req.Tag})
-}
 
+    matches := apiCatalog.FindByTags(req.Query)
+
+    for _, f := range matches {
+        for _, t := range req.Tags {
+            apiCatalog.RemoveTag(f.BlobId, t)
+        }
+    }
+
+    type respT struct {
+        Updated int        
+        Files   []apiEntry 
+    }
+    resp := respT{
+        Updated: len(matches),
+        Files:   make([]apiEntry, 0, len(matches)),
+    }
+    for _, f := range matches {
+        resp.Files = append(resp.Files, apiEntry{
+            BlobId:   f.BlobId,
+            FileName: f.FileName,
+            Tags:     apiCatalog.TagNamesOf(f),
+        })
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(resp)
+}
 
 func handleList(w http.ResponseWriter, r *http.Request) {
     tagsParam := r.URL.Query().Get("tags")
