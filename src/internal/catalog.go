@@ -121,22 +121,120 @@ func (c *Catalog) FindByTag(tagName string) []*FileNode {
 }
 
 func (c *Catalog) FindByTags(tagNames []string) []*FileNode {
-	results := []*FileNode{}
-	seen := make(map[FileID]bool)
+    if len(tagNames) == 0 {
+        return nil
+    }
 
-	for _, name := range tagNames {
-		tag, ok := c.findTagByName(name)
-		if !ok {
-			continue
-		}
-		for _, fid := range tag.FileIDs {
-			if !seen[fid] {
-				results = append(results, c.files[fid])
-				seen[fid] = true
-			}
-		}
-	}
-	return results
+    // Normaliza nombres (quita duplicados) y resuelve TagNodes
+    uniq := make(map[string]struct{})
+    tagNodes := make([]*TagNode, 0, len(tagNames))
+
+    for _, name := range tagNames {
+        if _, dup := uniq[name]; dup {
+            continue
+        }
+        tag, ok := c.findTagByName(name)
+        if !ok {
+            // Si falta alguno, no hay archivos que tengan TODOS
+            return []*FileNode{}
+        }
+        uniq[name] = struct{}{}
+        tagNodes = append(tagNodes, tag)
+    }
+
+    // Intersección de FileIDs (AND) — permite tags extra
+    if len(tagNodes) == 0 {
+        return []*FileNode{}
+    }
+    candidates := make(map[FileID]bool)
+    for _, fid := range tagNodes[0].FileIDs {
+        candidates[fid] = true
+    }
+    for _, t := range tagNodes[1:] {
+        next := make(map[FileID]bool)
+        for _, fid := range t.FileIDs {
+            if candidates[fid] {
+                next[fid] = true
+            }
+        }
+        candidates = next
+        if len(candidates) == 0 {
+            return []*FileNode{}
+        }
+    }
+
+    results := make([]*FileNode, 0, len(candidates))
+    for fid := range candidates {
+        if file, ok := c.files[fid]; ok {
+            results = append(results, file)
+        }
+    }
+    return results
+}
+
+func (c *Catalog) FindByTagsExact(tagNames []string) []*FileNode {
+    if len(tagNames) == 0 {
+        return nil
+    }
+
+    uniq := make(map[string]struct{})
+    tagNodes := make([]*TagNode, 0, len(tagNames))
+    tagIDSet := make(map[TagID]struct{}, len(tagNames))
+
+    for _, name := range tagNames {
+        if _, dup := uniq[name]; dup {
+            continue
+        }
+        tag, ok := c.findTagByName(name)
+        if !ok {
+            return []*FileNode{}
+        }
+        uniq[name] = struct{}{}
+        tagNodes = append(tagNodes, tag)
+        tagIDSet[tag.Id] = struct{}{}
+    }
+
+    if len(tagNodes) == 0 {
+        return []*FileNode{}
+    }
+    candidates := make(map[FileID]bool)
+    for _, fid := range tagNodes[0].FileIDs {
+        candidates[fid] = true
+    }
+    for _, t := range tagNodes[1:] {
+        next := make(map[FileID]bool)
+        for _, fid := range t.FileIDs {
+            if candidates[fid] {
+                next[fid] = true
+            }
+        }
+        candidates = next
+        if len(candidates) == 0 {
+            return []*FileNode{}
+        }
+    }
+
+    results := []*FileNode{}
+    for fid := range candidates {
+        file, ok := c.files[fid]
+        if !ok {
+            continue
+        }
+        if len(file.Tags) != len(tagIDSet) {
+            continue
+        }
+        match := true
+        for _, tid := range file.Tags {
+            if _, ok := tagIDSet[tid]; !ok {
+                match = false
+                break
+            }
+        }
+        if match {
+            results = append(results, file)
+        }
+    }
+    return results
 }
 
 func (c *Catalog) TagNamesOf(file *FileNode) []string {
@@ -150,40 +248,39 @@ func (c *Catalog) TagNamesOf(file *FileNode) []string {
 }
 
 func (c *Catalog) DeleteByTags(tagNames []string, storeDir string) ([]*FileNode, error) {
-	toDelete := make(map[FileID]*FileNode)
+    matches := c.FindByTagsExact(tagNames)
+    if len(matches) == 0 {
+        return nil, nil
+    }
 
-	for _, name := range tagNames {
-		tag, ok := c.findTagByName(name)
-		if !ok {
-			continue
-		}
-		for _, fid := range tag.FileIDs {
-			if file, ok := c.files[fid]; ok {
-				toDelete[fid] = file
-			}
-		}
-	}
+    toDelete := make(map[FileID]*FileNode, len(matches))
+    for _, f := range matches {
+        toDelete[f.Id] = f
+    }
 
-	deletedFiles := []*FileNode{}
-	for fid, file := range toDelete {
-		if err := deleteBlobFile(file.BlobId, storeDir); err != nil {
-			return nil, err
-		}
-		delete(c.files, fid)
-		deletedFiles = append(deletedFiles, file)
-	}
+    deletedFiles := make([]*FileNode, 0, len(matches))
+    for fid, file := range toDelete {
+        if err := deleteBlobFile(file.BlobId, storeDir); err != nil {
+            return nil, err
+        }
+        delete(c.files, fid)
+        deletedFiles = append(deletedFiles, file)
+    }
 
-	for _, tag := range c.tags {
-		newFileIDs := []FileID{}
-		for _, fid := range tag.FileIDs {
-			if _, marked := toDelete[fid]; !marked {
-				newFileIDs = append(newFileIDs, fid)
-			}
-		}
-		tag.FileIDs = newFileIDs
-	}
+    for _, tag := range c.tags {
+        if len(tag.FileIDs) == 0 {
+            continue
+        }
+        kept := tag.FileIDs[:0]
+        for _, fid := range tag.FileIDs {
+            if _, marked := toDelete[fid]; !marked {
+                kept = append(kept, fid)
+            }
+        }
+        tag.FileIDs = kept
+    }
 
-	return deletedFiles, nil
+    return deletedFiles, nil
 }
 
 func (c *Catalog) Count() int {
