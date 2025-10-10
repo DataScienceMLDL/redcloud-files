@@ -1,69 +1,246 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"io"
+	"net/http"
+	"net/url"
 	"os"
-	"path/filepath"
+	"strings"
 )
 
+// Por ahora solo se guardan en memoria por lo q si ejecutas el programa y luego lo cierras
+// se pierde todo lo que tenias en el catalogo aunque en /store quedan los blobs
+// TODO : Persistir el catalogo en un archivo y cargarlo al iniciar el programa (es decir sqlLite o
+//  un json simple (agregar indices Invertidos para busquedas rapidas))
 
-// StoreBlob stores a file as a blob in the specified directory using its SHA-256 hash as the filename.
-// It returns the blob ID (the hex-encoded hash) and an error, if any.
-// If the blob already exists in the store directory, it does not overwrite it.
-// Parameters:
-//   - filePath: the path to the source file to be stored.
-//   - storeDir: the directory where the blob should be stored.
-// Returns:
-//   - string: the blob ID (SHA-256 hash of the file contents).
-//   - error: any error encountered during the operation.
-func StoreBlob(filePath string, storeDir string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
+// main initializes the TBFS (Tag Based File System) CLI application.
+// It creates the storage directory, initializes the file catalog, and enters a command loop
+// where users can interactively add files with tags, list files by tags, show the catalog contents,
+// and delete files by tags. Supported commands are:
+//   - add file1 file2 ... --tags tag1,tag2 : Adds files with associated tags to the catalog.
+//   - list tag1,tag2                      : Lists files matching the specified tags.
+//   - show                                : Displays all entries in the catalog.
+//   - delete tag1,tag2                    : Deletes files matching the specified tags from the catalog and storage.
+//   - exit                                : Exits the application.
 
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-	blobID := hex.EncodeToString(hash.Sum(nil))
-
-	destPath := filepath.Join(storeDir, blobID)
-	if _, err := os.Stat(destPath); err == nil {
-		return blobID, nil
-	}
-
-	file.Seek(0, 0) 
-	destFile, err := os.Create(destPath)
-	if err != nil {
-		return "", err
-	}
-	defer destFile.Close()
-
-	if _, err := io.Copy(destFile, file); err != nil {
-		return "", err
-	}
-
-	return blobID, nil
-}
+const apiBase = "http://127.0.0.1:8080"
 
 func main() {
-	storeDir := "./store"
-	os.MkdirAll(storeDir, 0755)
-
-    // Example file to store
-	filePath := "example.txt"
-
-	blobID, err := StoreBlob(filePath, storeDir)
-	if err != nil {
-		fmt.Println("Error:", err)
+	// Server mode: `go run . serve`
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		storeDir := "./store"
+		_ = os.MkdirAll(storeDir, 0755)
+		c := NewCatalog()
+		fmt.Println("API escuchando en", apiBase)
+		if err := StartServer(":8080", storeDir, c); err != nil {
+			fmt.Println("Error al iniciar API:", err)
+		}
 		return
 	}
 
-	fmt.Println("File stored as:", blobID)
-	fmt.Println("Path in store:", filepath.Join(storeDir, blobID))
+	// Interactive CLI mode
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Println("Bienvenido a TBFS (CLI sobre API). Ejecuta `go run . serve` en otra terminal primero.")
+	fmt.Println("Comandos: add file1 file2 ... --tags t1,t2 | list t1,t2 | show | delete t1,t2 | exit")
+
+	for {
+		fmt.Print("tbfs> ")
+		if !scanner.Scan() {
+			break
+		}
+		line := scanner.Text()
+		if line == "exit" {
+			fmt.Println("Exiting...")
+			break
+		}
+		args := strings.Fields(line)
+		if len(args) == 0 {
+			continue
+		}
+		switch args[0] {
+		case "add":
+			if len(args) < 2 {
+				fmt.Println("Usage: add file1 file2 ... --tags tag1,tag2")
+				continue
+			}
+			var fileList []string
+			var tags []string
+			tagsIndex := -1
+			for i, a := range args {
+				if a == "--tags" {
+					tagsIndex = i
+					break
+				}
+			}
+			if tagsIndex == -1 {
+				fileList = args[1:]
+			} else {
+				fileList = args[1:tagsIndex]
+				if tagsIndex+1 < len(args) {
+					tags = strings.Split(args[tagsIndex+1], ",")
+				}
+			}
+			body, _ := json.Marshal(map[string]any{
+				"files": fileList,
+				"tags":  tags,
+			})
+			resp, err := http.Post(apiBase+"/add", "application/json", bytes.NewBuffer(body))
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			resp.Body.Close()
+			fmt.Println("Archivos enviados a la API.")
+
+		case "add_tag":
+			if len(args) < 3 {
+				fmt.Println("Usage: add_tag tag_query tag_list")
+				continue
+			}
+			query := strings.Split(args[1], ",")
+			newTags := strings.Split(args[2], ",")
+
+			body, _ := json.Marshal(map[string]any{
+				"query": query,
+				"tags":  newTags,
+			})
+			resp, err := http.Post(apiBase+"/add_tag", "application/json", bytes.NewBuffer(body))
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode >= 300 {
+				var msg struct {
+					Error string `json:"error"`
+				}
+				_ = json.NewDecoder(resp.Body).Decode(&msg)
+				if msg.Error != "" {
+					fmt.Println("Error:", msg.Error)
+				} else {
+					fmt.Println("Error:", resp.Status)
+				}
+				continue
+			}
+			var addTagResp struct {
+				Updated int        `json:"updated"`
+				Files   []apiEntry `json:"files"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&addTagResp); err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			fmt.Printf("Updated %d file(s).\n", addTagResp.Updated)
+			for _, e := range addTagResp.Files {
+				fmt.Printf("Blob: %s | File: %s | Tags: %v\n", e.BlobId, e.FileName, e.Tags)
+			}
+
+		case "delete_tag":
+			if len(args) < 3 {
+				fmt.Println("Usage: delete_tag tag_query tag_list")
+				continue
+			}
+			query := strings.Split(args[1], ",")
+			delTags := strings.Split(args[2], ",")
+
+			body, _ := json.Marshal(map[string]any{
+				"query": query,
+				"tags":  delTags,
+			})
+			resp, err := http.Post(apiBase+"/delete_tag", "application/json", bytes.NewBuffer(body))
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode >= 300 {
+				var msg struct {
+					Error string `json:"error"`
+				}
+				_ = json.NewDecoder(resp.Body).Decode(&msg)
+				if msg.Error != "" {
+					fmt.Println("Error:", msg.Error)
+				} else {
+					fmt.Println("Error:", resp.Status)
+				}
+				continue
+			}
+			var delTagResp struct {
+				Updated int       
+				Files   []apiEntry 
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&delTagResp); err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			fmt.Printf("Updated %d file(s).\n", delTagResp.Updated)
+			for _, e := range delTagResp.Files {
+				fmt.Printf("Blob: %s | File: %s | Tags: %v\n", e.BlobId, e.FileName, e.Tags)
+			}
+
+		case "list":
+			if len(args) < 2 {
+				fmt.Println("Usage: list tag1,tag2")
+				continue
+			}
+			q := url.Values{}
+			q.Set("tags", args[1])
+			resp, err := http.Get(apiBase + "/list?" + q.Encode())
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			var entries []apiEntry
+			if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+				fmt.Println("Error:", err)
+			}
+			resp.Body.Close()
+			fmt.Printf("Results found: %d\n", len(entries))
+			for _, e := range entries {
+				fmt.Printf("Blob: %s | File: %s | Tags: %v\n", e.BlobId, e.FileName, e.Tags)
+			}
+
+		case "show":
+			resp, err := http.Get(apiBase + "/show")
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			var entries []apiEntry
+			if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+				fmt.Println("Error:", err)
+			}
+			resp.Body.Close()
+			fmt.Printf("Total entries: %d\n", len(entries))
+			for _, e := range entries {
+				fmt.Printf("BlobID: %s | File: %s | Tags: %v\n", e.BlobId, e.FileName, e.Tags)
+			}
+
+		case "delete":
+			if len(args) < 2 {
+				fmt.Println("Usage: delete tag1,tag2")
+				continue
+			}
+			req, _ := http.NewRequest(http.MethodDelete, apiBase+"/delete?tags="+url.QueryEscape(args[1]), nil)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			var entries []apiEntry
+			if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+				fmt.Println("Error:", err)
+			}
+			resp.Body.Close()
+			for _, e := range entries {
+				fmt.Printf("Deleted Blob: %s | File: %s | Tags: %v\n", e.BlobId, e.FileName, e.Tags)
+			}
+
+		default:
+			fmt.Println("Unknown command:", args[0])
+		}
+	}
 }
